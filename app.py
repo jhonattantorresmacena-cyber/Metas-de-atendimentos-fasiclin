@@ -1,100 +1,126 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 
-# 1. Configuração da página
-st.set_page_config(page_title="FASICLIN Dashboard", layout="wide")
+# Configuração da Página
+st.set_page_config(page_title="FASICLIN - Dashboard Premium v2.3", layout="wide")
 
-# 2. Função para transformar o link do Google Sheets em link de download CSV
-def get_csv_url(url):
-    # Extrai o ID da planilha e o GID da aba
+# Estilização CSS para manter a identidade visual original
+st.markdown("""
+    <style>
+    .main { background-color: #f8f9fa; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    div[data-testid="stMetricValue"] { color: #004a87; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# URL do CSV (Google Sheets publicado)
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTHp4J9odCsZapd1bUFHsJYrE7jQGH8VUoyEfb4sVM7py71J3XPJ7dmjKymMrQ3pQ/pub?output=csv"
+
+@st.cache_data(ttl=600) # Atualiza o cache a cada 10 minutos
+def load_data():
     try:
-        sheet_id = url.split("/d/")[1].split("/")[0]
-        if "gid=" in url:
-            gid = url.split("gid=")[1].split("&")[0]
-        else:
-            gid = "0"
-        return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-    except:
-        return None
+        df = pd.read_csv(SHEET_URL)
+        # Normalização de colunas similar ao código JS original
+        df.columns = [col.strip().upper() for col in df.columns]
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar dados: {e}")
+        return pd.DataFrame()
 
-# 3. Interface Principal
-st.title("📊 FASICLIN - Dashboard de Produtividade")
+# Carregamento dos dados
+df_raw = load_data()
 
-# Link da sua planilha
-url_planilha = "https://docs.google.com/spreadsheets/d/1yoPVCN4NRVC1ytEEuG5Tqb30ZGjiLHLG/edit?gid=1205707816#gid=1205707816"
-csv_url = get_csv_url(url_planilha)
-
-@st.cache_data(ttl=300) # Atualiza a cada 5 minutos
-def load_data(url):
-    df = pd.read_csv(url)
-    # Limpa nomes de colunas: tira espaços, remove acentos e coloca em maiúsculas
-    df.columns = df.columns.str.strip().str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8').str.upper()
-    return df
-
-try:
-    df = load_data(csv_url)
-    
-    # Identificação flexível de colunas (para evitar o KeyError)
-    # Procura colunas que contenham "QUANT" (Meta) e os meses
-    col_meta = next((c for c in df.columns if "QUANT" in c or "META" in c), None)
-    col_clinica = next((c for c in df.columns if "CLINICA" in c or "UNIDADE" in c), df.columns[0])
-    
-    meses = ["JANEIRO", "FEVEREIRO", "MARCO", "ABRIL", "MAIO", "JUNHO"]
-    meses_presentes = [c for c in df.columns if any(m in c for m in meses)]
-
-    if col_meta is None:
-        st.error(f"Coluna de Meta não encontrada. Colunas detectadas: {list(df.columns)}")
-        st.stop()
-
-    # --- FILTROS ---
-    st.sidebar.header("Filtros")
-    clinicas = ["TODAS"] + sorted(df[col_clinica].dropna().unique().tolist())
-    selecao = st.sidebar.selectbox("Selecione a Clínica", clinicas)
-
-    if selecao != "TODAS":
-        df = df[df[col_clinica] == selecao]
-
-    # --- CÁLCULOS ---
-    # Convertendo para número e tratando erros
-    meta_total = pd.to_numeric(df[col_meta], errors='coerce').sum()
-    realizado_total = df[meses_presentes].apply(pd.to_numeric, errors='coerce').sum().sum()
-    
-    percentual = (realizado_total / meta_total * 100) if meta_total > 0 else 0
-    saldo = meta_total - realizado_total
-
-    # --- DASHBOARD ---
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Meta Semestral", f"{meta_total:,.0f}")
-    c2.metric("Realizado Total", f"{realizado_total:,.0f}")
-    c3.metric("Eficiência", f"{percentual:.1f}%")
-    c4.metric("Saldo Restante", f"{max(0, saldo):,.0f}")
-
+if not df_raw.empty:
+    # Header
+    st.title("🏥 FASICLIN - Dashboard de Produtividade")
+    st.subheader("Acompanhamento de Metas e Procedimentos")
     st.divider()
 
-    col_g1, col_g2 = st.columns([1, 2])
+    # Controles (Sidebar ou Topo)
+    col_unidade, col_clinica = st.columns(2)
+    
+    with col_unidade:
+        # No original as unidades eram abas da planilha, aqui assumimos uma coluna 'UNIDADE' 
+        # ou filtramos conforme a estrutura dos dados
+        unidades = ["SINOP", "SORRISO", "CUIABA", "RONDONOPOLIS", "PRIMAVERA"]
+        unidade_selected = st.selectbox("Selecione a Unidade", unidades)
 
-    with col_g1:
-        fig = go.Figure(data=[go.Pie(labels=['Realizado', 'Pendente'], 
-                             values=[realizado_total, max(0, saldo)], 
-                             hole=.7, marker_colors=['#299947', '#eeeeee'])])
-        fig.update_layout(showlegend=False, title="Progresso da Meta")
-        fig.add_annotation(text=f"{percentual:.0f}%", x=0.5, y=0.5, font_size=40, showarrow=False)
-        st.plotly_chart(fig, use_container_width=True)
+    # Filtragem por Clínica (Dinâmica baseada nos dados)
+    clinicas_disponiveis = ["TODAS"] + sorted(df_raw["CLINICA"].unique().tolist())
+    with col_clinica:
+        clinica_selected = st.selectbox("Filtrar Clínica", clinicas_disponiveis)
 
-    with col_g2:
-        resumo_bar = df.groupby(col_clinica).agg({col_meta: 'sum'}).reset_index()
-        resumo_bar['REAL'] = df.groupby(col_clinica)[meses_presentes].sum().sum(axis=1).values
-        
+    # Lógica de Filtro
+    df_filtered = df_raw.copy()
+    if clinica_selected != "TODAS":
+        df_filtered = df_filtered[df_filtered["CLINICA"] == clinica_selected]
+
+    # Cálculos (Fevereiro + Março + Abril)
+    # Ajuste os nomes das colunas conforme sua planilha real
+    col_meta = "QUANTIDE DE PROCEDIMENTO POR SEMESTRE"
+    meses_realizados = ["FEVEREIRO", "MARÇO", "ABRIL"]
+    
+    soma_meta = df_filtered[col_meta].sum()
+    soma_realizado = df_filtered[meses_realizados].sum().sum()
+    percentual = (soma_realizado / soma_meta * 100) if soma_meta > 0 else 0
+    falta = max(0, soma_meta - soma_realizado)
+
+    # Alerta de Metas
+    if falta > 0:
+        st.info(f"🚩 **Acompanhamento de Metas:** Faltam **{falta:.0f}** procedimentos. Média necessária: **{falta/4:.0f}/mês**.")
+    else:
+        st.success("🎉 **Meta atingida para esta seleção!**")
+
+    # Dashboard Grid
+    col_donut, col_bar = st.columns([1, 2])
+
+    with col_donut:
+        # Gráfico de Rosca (Eficiência)
+        fig_donut = go.Figure(data=[go.Pie(
+            labels=['Realizado', 'Pendente'],
+            values=[soma_realizado, falta],
+            hole=.7,
+            marker_colors=['#299947', '#f2f2f2'],
+            textinfo='none'
+        )])
+        fig_donut.update_layout(
+            title="Eficiência Total",
+            annotations=[dict(text=f'{percentual:.0f}%', x=0.5, y=0.5, font_size=40, showarrow=False, font_color="#004a87")],
+            showlegend=False,
+            height=350
+        )
+        st.plotly_chart(fig_donut, use_container_width=True)
+
+    with col_bar:
+        # Gráfico de Barras (Realizado vs Meta)
+        # Agrupando por clínica para o gráfico
+        df_chart = df_filtered.groupby("CLINICA").agg({
+            col_meta: 'sum'
+        }).reset_index()
+        df_chart['REALIZADO'] = df_filtered.groupby("CLINICA")[meses_realizados].sum().sum(axis=1).values
+
         fig_bar = go.Figure()
-        fig_bar.add_trace(go.Bar(name='Realizado', x=resumo_bar[col_clinica], y=resumo_bar['REAL'], marker_color='#299947'))
-        fig_bar.add_trace(go.Bar(name='Meta', x=resumo_bar[col_clinica], y=resumo_bar[col_meta], marker_color='#004a87'))
-        fig_bar.update_layout(barmode='group', title="Comparativo por Clínica")
+        fig_bar.add_trace(go.Bar(name='Realizado', x=df_chart['CLINICA'], y=df_chart['REALIZADO'], marker_color='#299947'))
+        fig_bar.add_trace(go.Bar(name='Meta', x=df_chart['CLINICA'], y=df_chart[col_meta], marker_color='#004a87'))
+        
+        fig_bar.update_layout(barmode='group', title="Realizado vs Meta por Clínica", height=350)
         st.plotly_chart(fig_bar, use_container_width=True)
 
-    with st.expander("Dados Brutos da Planilha"):
-        st.write(df)
+    # Detalhamento (Lista)
+    st.markdown("### Detalhamento")
+    
+    # Criando os cards de detalhamento
+    cols = st.columns(3)
+    for i, (_, row) in enumerate(df_chart.iterrows()):
+        perc_item = (row['REALIZADO'] / row[col_meta] * 100) if row[col_meta] > 0 else 0
+        with cols[i % 3]:
+            st.metric(
+                label=row['CLINICA'], 
+                value=f"{row['REALIZADO']:.0f}", 
+                delta=f"{perc_item:.1f}% da Meta"
+            )
 
-except Exception as e:
-    st.error(f"Erro de Conexão: {e}")
-    st.info("💡 Verifique se a planilha do Google está compartilhada como 'Qualquer pessoa com o link pode ler'.")
+else:
+    st.warning("Aguardando conexão com a planilha ou planilha vazia.")
