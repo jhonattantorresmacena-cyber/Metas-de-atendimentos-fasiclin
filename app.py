@@ -1,27 +1,14 @@
-import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-
-# Configuração da Página
-st.set_page_config(page_title="FASICLIN - Dashboard", layout="wide")
-
-# URL do seu CSV
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTHp4J9odCsZapd1bUFHsJYrE7jQGH8VUoyEfb4sVM7py71J3XPJ7dmjKymMrQ3pQ/pub?output=csv"
-
 @st.cache_data(ttl=60)
 def load_data():
     try:
         df = pd.read_csv(SHEET_URL)
-        
-        # --- TRATAMENTO CRÍTICO DE COLUNAS ---
-        # Remove espaços no início/fim e transforma tudo em MAIÚSCULO
-        df.columns = [str(col).strip().upper() for col in df.columns]
-        
-        # Garante que as colunas numéricas sejam tratadas como números (remove erros de texto)
-        cols_numericas = ["FEVEREIRO", "MARÇO", "ABRIL", "QUANTIDE DE PROCEDIMENTO POR SEMESTRE"]
-        for col in cols_numericas:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        # Limpeza radical: remove quebras de linha (\n, \r), espaços duplos e coloca em maiúsculo
+        df.columns = [
+            str(col).replace('\n', ' ').replace('\r', ' ').strip().upper() 
+            for col in df.columns
+        ]
+        # Remove espaços duplos que podem surgir após tirar o \n
+        df.columns = [" ".join(col.split()) for col in df.columns]
         
         return df
     except Exception as e:
@@ -30,39 +17,29 @@ def load_data():
 
 df_raw = load_data()
 
-# Verificação de segurança: Mostrar colunas se der erro de novo
 if not df_raw.empty:
-    # 1. Definimos os nomes das colunas exatamente como o script vai buscar
+    # --- MAPEAMENTO AUTOMÁTICO DE COLUNAS ---
+    # Em vez de nome fixo, buscamos por palavras que existem na coluna
+    def encontrar_coluna(lista_colunas, palavras_chave):
+        for col in lista_colunas:
+            if all(palavra in col for palavra in palavras_chave):
+                return col
+        return None
+
+    # Busca a coluna de meta (ex: que tenha QUANTIDADE e SEMESTRE)
+    COL_META = encontrar_coluna(df_raw.columns, ["QUANTIDADE", "SEMESTRE"])
     COL_CLINICA = "CLINICA"
-    COL_META = "QUANTIDE DE PROCEDIMENTO POR SEMESTRE"
     MESES = ["FEVEREIRO", "MARÇO", "ABRIL"]
 
-    # 2. Verificamos se a coluna de Meta existe antes de calcular
-    if COL_META not in df_raw.columns:
-        st.error(f"Coluna '{COL_META}' não encontrada. Colunas disponíveis: {list(df_raw.columns)}")
-        st.stop()
+    # Se não encontrar pelo nome 'bonito', tenta o nome com erro que apareceu no print
+    if not COL_META:
+        if "QUANTIDE DE PROCEDIMENTO POR SEMESTRE" in df_raw.columns:
+            COL_META = "QUANTIDE DE PROCEDIMENTO POR SEMESTRE"
+        else:
+            st.error(f"Não encontrei a coluna de Meta. Colunas lidas: {list(df_raw.columns)}")
+            st.stop()
 
-    # --- O RESTANTE DO SEU CÓDIGO DE FILTRO ---
-    st.title("🏥 FASICLIN - Dashboard")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        unidade = st.selectbox("Selecione a Unidade", ["SINOP", "SORRISO", "CUIABA", "RONDONOPOLIS", "PRIMAVERA"])
-    
-    clinicas = ["TODAS"] + sorted(df_raw[COL_CLINICA].unique().tolist())
-    with col2:
-        clinica_sel = st.selectbox("Filtrar Clínica", clinicas)
-
-    # Filtragem
-    df_filtered = df_raw.copy()
-    if clinica_sel != "TODAS":
-        df_filtered = df_filtered[df_filtered[COL_CLINICA] == clinica_sel]
-
-    # Cálculos
-    soma_meta = df_filtered[COL_META].sum()
-    soma_realizado = df_filtered[MESES].sum().sum()
-    
-    # Exibição (Exemplo simplificado)
-    st.metric("Total Realizado", f"{soma_realizado:.0f}", f"Meta: {soma_meta:.0f}")
-    
-    # ... (Seus gráficos de donut e barra seguem aqui)
+    # Conversão garantida para números
+    for c in [COL_META] + MESES:
+        if c in df_raw.columns:
+            df_raw[c] = pd.to_numeric(df_raw[c], errors='coerce').fillna(0)
