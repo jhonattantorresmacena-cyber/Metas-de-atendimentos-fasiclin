@@ -12,39 +12,44 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. Configuração de IDs (SUBSTITUA OS GIDs PELOS DA SUA PLANILHA)
-SHEET_ID = "1yoPVCN4NRVC1ytEEuG5Tqb30ZGjiLHLG" # Extraído da sua imagem
+# 1. Identificação da Planilha (extraída dos seus links)
+SHEET_ID = "1yoPVCN4NRVC1ytEEuG5Tqb30ZGjiLHLG"
+
+# 2. Configuração exata dos GIDs das abas
 ABAS_CONFIG = {
-    "SINOP": "gid=1205707816", # Exemplo: verifique o gid= no final da URL
-    "SORRISO": "gid=1415012993",  # Substitua pelo gid real
-    "CUIABA": "gid=1565006717",   # Substitua pelo gid real
-    "RONDONOPOLIS": "gid=426551434", # Substitua pelo gid real
-    "PRIMAVERA": "gid=1535754805"  # Este apareceu no seu print
+    "SINOP": "1205707816",
+    "SORRISO": "1415012993",
+    "CUIABA": "1565006717",
+    "RONDONOPOLIS": "426551434",
+    "PRIMAVERA": "1535754805"
 }
 
 @st.cache_data(ttl=60)
-def load_data_v3():
+def load_all_data():
     lista_dfs = []
     for nome_aba, gid in ABAS_CONFIG.items():
         try:
-            # Link de exportação direta por GID (mais estável)
+            # Formato de exportação CSV usando o GID específico de cada unidade
             url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
             df_temp = pd.read_csv(url)
             
-            # Normalização idêntica ao seu JS original
-            df_temp.columns = [str(c).replace('\n', ' ').replace('\r', ' ').strip().upper() for c in df_temp.columns]
-            df_temp = df_temp.rename(columns=lambda x: " ".join(x.split()))
+            # Limpeza de colunas (trata quebras de linha e espaços extras)
+            df_temp.columns = [
+                str(c).replace('\n', ' ').replace('\r', ' ').strip().upper() 
+                for c in df_temp.columns
+            ]
+            # Remove espaços duplos internos nos nomes das colunas
+            df_temp.columns = [" ".join(c.split()) for c in df_temp.columns]
             
+            # Adiciona a coluna de identificação da unidade
             df_temp['UNIDADE_NOME'] = nome_aba
             lista_dfs.append(df_temp)
         except Exception as e:
-            st.error(f"Erro na aba {nome_aba}: {e}")
+            st.error(f"Erro ao carregar a unidade {nome_aba}: {e}")
             
     return pd.concat(lista_dfs, ignore_index=True) if lista_dfs else pd.DataFrame()
 
-df_raw = load_data_v3()
-
-if not df_raw.empty:
+# O restante do código de processamento e gráficos segue abaixo...
     # Identificação de Colunas Críticas
     # O código busca por 'QUANTIDE' devido ao erro de digitação no HTML original
     COL_META = "QUANTIDE DE PROCEDIMENTO POR SEMESTRE" if "QUANTIDE DE PROCEDIMENTO POR SEMESTRE" in df_raw.columns else "QUANTIDADE DE PROCEDIMENTO POR SEMESTRE"
