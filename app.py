@@ -3,9 +3,8 @@ import pandas as pd
 import plotly.graph_objects as go
 
 # Configuração da página
-st.set_page_config(page_title="FASICLIN Dashboard - Google Sheets", layout="wide")
+st.set_page_config(page_title="FASICLIN Dashboard", layout="wide")
 
-# Estilização CSS
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -14,45 +13,43 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.title("📊 FASICLIN - Dashboard Tempo Real")
-st.info("Conectado diretamente ao Google Sheets")
 
-# --- FUNÇÃO PARA PUXAR DADOS DO GOOGLE SHEETS ---
+@st.cache_data(ttl=600) # Atualiza o cache a cada 10 minutos
 def load_data():
-    # ID da sua planilha extraído do link que você enviou
     sheet_id = "1yoPVCN4NRVC1ytEEuG5Tqb30ZGjiLHLG"
-    # GID da aba específica (extraído do seu link #gid=1205707816)
     gid = "1205707816"
-    
-    # URL de exportação para CSV
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     
     df = pd.read_csv(url)
+    
+    # Limpeza profunda dos nomes das colunas
+    df.columns = [str(c).strip().upper() for c in df.columns]
     return df
 
 try:
-    # Carregando os dados
     df_raw = load_data()
-    
-    # Limpeza de nomes de colunas (Maiúsculas e sem espaços)
     df = df_raw.copy()
-    df.columns = [str(c).strip().upper() for c in df.columns]
 
-    # Mapeamento de colunas
-    col_meta = "QUANTIDE DE PROCEDIMENTO POR SEMESTRE"
-    col_clinica = "CLINICA"
-    # Meses que estão na sua planilha
-    meses_disponiveis = [c for c in ["FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO"] if c in df.columns]
+    # --- IDENTIFICAÇÃO DINÂMICA DE COLUNAS ---
+    # Busca por colunas que contenham "QUANTIDADE" ou "META" e os meses
+    col_meta = next((c for c in df.columns if "QUANT" in c or "META" in c), None)
+    meses_disponiveis = [c for c in ["FEVEREIRO", "MARCO", "ABRIL", "MAIO", "JUNHO"] if c in df.columns]
+    col_clinica = "CLINICA" if "CLINICA" in df.columns else df.columns[0]
+
+    if not col_meta:
+        st.error("Não foi possível encontrar a coluna de Meta (Quantidade). Verifique o nome na planilha.")
+        st.stop()
 
     # --- BARRA LATERAL ---
-    st.sidebar.header("Filtros do Dashboard")
+    st.sidebar.header("Filtros")
+    clinicas = ["TODAS"] + sorted(df[col_clinica].dropna().unique().tolist())
+    filtro = st.sidebar.selectbox("Selecione a Clínica", clinicas)
     
-    if col_clinica in df.columns:
-        clinicas = ["TODAS"] + sorted(df[col_clinica].dropna().unique().tolist())
-        filtro = st.sidebar.selectbox("Selecione a Clínica", clinicas)
-        if filtro != "TODAS":
-            df = df[df[col_clinica] == filtro]
+    if filtro != "TODAS":
+        df = df[df[col_clinica] == filtro]
 
     # --- CÁLCULOS ---
+    # Converte para numérico garantindo que erros virem 0
     total_meta = pd.to_numeric(df[col_meta], errors='coerce').sum()
     total_realizado = df[meses_disponiveis].apply(pd.to_numeric, errors='coerce').sum().sum()
     
@@ -61,10 +58,10 @@ try:
 
     # --- MÉTRICAS ---
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Meta do Semestre", f"{total_meta:,.0f}")
-    m2.metric("Realizado Acumulado", f"{total_realizado:,.0f}")
-    m3.metric("Eficiência Atual", f"{percentual:.1f}%")
-    m4.metric("Saldo Restante", f"{max(0, falta):,.0f}")
+    m1.metric("Meta Total", f"{total_meta:,.0f}")
+    m2.metric("Realizado", f"{total_realizado:,.0f}")
+    m3.metric("Eficiência", f"{percentual:.1f}%")
+    m4.metric("Saldo", f"{max(0, falta):,.0f}")
 
     st.markdown("---")
 
@@ -72,7 +69,7 @@ try:
     col_esq, col_dir = st.columns([1, 2])
 
     with col_esq:
-        st.subheader("Progresso Geral")
+        st.subheader("Progresso")
         fig_donut = go.Figure(data=[go.Pie(
             labels=['Realizado', 'Pendente'],
             values=[total_realizado, max(0, falta)],
@@ -85,24 +82,19 @@ try:
         st.plotly_chart(fig_donut, use_container_width=True)
 
     with col_dir:
-        st.subheader("Performance por Clínica")
-        if col_clinica in df.columns:
-            resumo = df.groupby(col_clinica).agg({col_meta: 'sum'}).reset_index()
-            resumo['REALIZADO'] = df.groupby(col_clinica)[meses_disponiveis].sum().sum(axis=1).values
-            
-            fig_bar = go.Figure()
-            fig_bar.add_trace(go.Bar(name='Realizado', x=resumo[col_clinica], y=resumo['REALIZADO'], marker_color='#299947'))
-            fig_bar.add_trace(go.Bar(name='Meta', x=resumo[col_clinica], y=resumo[col_meta], marker_color='#004a87'))
-            fig_bar.update_layout(barmode='group', height=350)
-            st.plotly_chart(fig_bar, use_container_width=True)
+        st.subheader("Por Clínica")
+        resumo = df.groupby(col_clinica).agg({col_meta: 'sum'}).reset_index()
+        resumo['REALIZADO'] = df.groupby(col_clinica)[meses_disponiveis].sum().sum(axis=1).values
+        
+        fig_bar = go.Figure()
+        fig_bar.add_trace(go.Bar(name='Realizado', x=resumo[col_clinica], y=resumo['REALIZADO'], marker_color='#299947'))
+        fig_bar.add_trace(go.Bar(name='Meta', x=resumo[col_clinica], y=resumo[col_meta], marker_color='#004a87'))
+        fig_bar.update_layout(barmode='group', height=350)
+        st.plotly_chart(fig_bar, use_container_width=True)
 
-    # Botão para atualizar dados manualmente
-    if st.button("🔄 Atualizar Dados do Google Sheets"):
+    if st.button("🔄 Forçar Atualização de Dados"):
+        st.cache_data.clear()
         st.rerun()
 
-    with st.expander("Visualizar Base de Dados Completa"):
-        st.dataframe(df_raw)
-
 except Exception as e:
-    st.error(f"Erro ao conectar com o Google Sheets: {e}")
-    st.info("Certifique-se de que a planilha está configurada como 'Qualquer pessoa com o link pode ler'.")
+    st.error(f"Erro crítico: {e}")
