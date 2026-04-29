@@ -59,7 +59,7 @@ if not df_raw.empty:
 
     # Cálculos (Fevereiro + Março + Abril)
     # Ajuste os nomes das colunas conforme sua planilha real
-    col_meta = "QUANTIDE DE PROCEDIMENTO POR SEMESTRE"
+    col_meta = "QUANTIDADE DE PROCEDIMENTO POR SEMESTRE"
     meses_realizados = ["FEVEREIRO", "MARÇO", "ABRIL"]
     
     soma_meta = df_filtered[col_meta].sum()
