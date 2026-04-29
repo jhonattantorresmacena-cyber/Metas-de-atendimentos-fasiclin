@@ -2,110 +2,118 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-# 1. Configuração da Página (Deve ser a primeira coisa do Streamlit)
-st.set_page_config(page_title="FASICLIN - Dashboard", layout="wide")
+# 1. Configuração da Página
+st.set_page_config(page_title="FASICLIN - Dashboard Premium", layout="wide")
 
-# 2. URL do seu Google Sheets (CSV)
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTHp4J9odCsZapd1bUFHsJYrE7jQGH8VUoyEfb4sVM7py71J3XPJ7dmjKymMrQ3pQ/pub?output=csv"
+# 2. Link da sua planilha (ajustado para exportação de abas)
+# Substitua o ID abaixo pelo ID da sua planilha se necessário
+SHEET_ID = "1THp4J9odCsZapd1bUFHsJYrE7jQGH8VUoyEfb4sVM7py71J3XPJ7dmjKymMrQ3pQ"
+BASE_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet="
 
-# 3. Função de Carregamento com Limpeza de Dados
 @st.cache_data(ttl=60)
-def load_data():
-    try:
-        df = pd.read_csv(SHEET_URL)
-        
-        # Limpeza de nomes de colunas (remove quebras de linha e espaços extras)
-        df.columns = [
-            str(col).replace('\n', ' ').replace('\r', ' ').strip().upper() 
-            for col in df.columns
-        ]
-        # Remove espaços duplos internos
-        df.columns = [" ".join(col.split()) for col in df.columns]
-        
-        return df
-    except Exception as e:
-        st.error(f"Erro ao conectar com a planilha: {e}")
-        return pd.DataFrame()
+def load_all_data():
+    abas = ["SINOP", "SORRISO", "CUIABA", "RONDONOPOLIS", "PRIMAVERA"]
+    lista_dfs = []
+    
+    for aba in abas:
+        try:
+            url = BASE_URL + aba
+            df_temp = pd.read_csv(url)
+            # Normaliza colunas
+            df_temp.columns = [str(c).replace('\n', ' ').strip().upper() for c in df_temp.columns]
+            df_temp['UNIDADE_ORIGEM'] = aba
+            lista_dfs.append(df_temp)
+        except Exception as e:
+            st.warning(f"Não foi possível ler a aba: {aba}")
+            
+    return pd.concat(lista_dfs, ignore_index=True) if lista_dfs else pd.DataFrame()
 
-# 4. Processamento de Dados
-df_raw = load_data()
+df_raw = load_all_data()
 
 if not df_raw.empty:
-    # Mapeamento inteligente de colunas
-    def encontrar_coluna(lista_colunas, palavras_chave):
-        for col in lista_colunas:
-            if all(palavra in col for palavra in palavras_chave):
-                return col
+    # --- MAPEAMENTO DE COLUNAS ---
+    # Busca automática para evitar erro de 'QUANTIDE' ou 'QUANTIDADE'
+    def buscar_col(lista, termos):
+        for c in lista:
+            if all(t in c for t in termos): return c
         return None
 
-    # Busca as colunas principais
-    COL_META = encontrar_coluna(df_raw.columns, ["QUANTIDE", "SEMESTRE"]) or \
-               encontrar_coluna(df_raw.columns, ["QUANTIDADE", "SEMESTRE"])
-    
+    COL_META = buscar_col(df_raw.columns, ["QUANTID", "SEMESTRE"])
     COL_CLINICA = "CLINICA"
     MESES = ["FEVEREIRO", "MARÇO", "ABRIL"]
 
-    # Validação de segurança
-    if not COL_META:
-        st.error(f"Coluna de Meta não encontrada. Colunas detectadas: {list(df_raw.columns)}")
-        st.stop()
-
-    # Conversão de valores para números (garante que cálculos funcionem)
+    # Conversão Numérica
     for c in [COL_META] + MESES:
         if c in df_raw.columns:
             df_raw[c] = pd.to_numeric(df_raw[c], errors='coerce').fillna(0)
 
-    # --- INTERFACE DO DASHBOARD ---
+    # --- INTERFACE ---
     st.title("🏥 FASICLIN - Dashboard de Produtividade")
-    st.markdown("---")
-
-    # Filtros
-    col_u, col_c = st.columns(2)
-    with col_u:
-        unidade = st.selectbox("Unidade", ["SINOP", "SORRISO", "CUIABA", "RONDONOPOLIS", "PRIMAVERA"])
-    with col_c:
-        clinicas = ["TODAS"] + sorted(df_raw[COL_CLINICA].unique().tolist())
-        clinica_sel = st.selectbox("Filtrar Clínica", clinicas)
-
-    # Lógica de Filtro
-    df_filtered = df_raw.copy()
-    if clinica_sel != "TODAS":
-        df_filtered = df_filtered[df_filtered[COL_CLINICA] == clinica_sel]
-
-    # Cálculos Totais
-    total_meta = df_filtered[COL_META].sum()
-    total_realizado = df_filtered[MESES].sum().sum()
-    percentual = (total_realizado / total_meta * 100) if total_meta > 0 else 0
-    falta = max(0, total_meta - total_realizado)
-
-    # Alerta de Metas
-    if falta > 0:
-        st.info(f"**Acompanhamento:** Faltam **{falta:.0f}** procedimentos. Média necessária: **{falta/4:.0f}/mês**.")
-    else:
-        st.success("🎉 Meta atingida para esta seleção!")
-
-    # Gráficos
-    c1, c2 = st.columns([1, 2])
     
-    with c1:
+    # Filtros
+    c_un, c_cl = st.columns(2)
+    with c_un:
+        unidade_sel = st.selectbox("Selecione a Unidade", ["TODAS", "SINOP", "SORRISO", "CUIABA", "RONDONOPOLIS", "PRIMAVERA"])
+    
+    # Filtro de Unidade
+    df_filtrado = df_raw.copy()
+    if unidade_sel != "TODAS":
+        df_filtrado = df_filtrado[df_filtrado['UNIDADE_ORIGEM'] == unidade_sel]
+
+    with c_cl:
+        clinicas = ["TODAS"] + sorted(df_filtrado[COL_CLINICA].dropna().unique().tolist())
+        clinica_sel = st.selectbox("Filtrar Clínica (Curso)", clinicas)
+
+    if clinica_sel != "TODAS":
+        df_filtrado = df_filtrado[df_filtrado[COL_CLINICA] == clinica_sel]
+
+    # --- CÁLCULOS ---
+    soma_meta = df_filtrado[COL_META].sum()
+    soma_real = df_filtrado[MESES].sum().sum()
+    perc_total = (soma_real / soma_meta * 100) if soma_meta > 0 else 0
+    falta = max(0, soma_meta - soma_real)
+
+    # Banner de Acompanhamento (Igual à imagem)
+    st.info(f"**Acompanhamento de Metas:** Faltam **{falta:.0f}** procedimentos. Média necessária: **{falta/4:.0f}/mês**.")
+
+    # --- GRÁFICOS (Correção do item 2) ---
+    col_donut, col_bar = st.columns([1, 2])
+
+    with col_donut:
         fig_donut = go.Figure(data=[go.Pie(
-            labels=['Realizado', 'Pendente'],
-            values=[total_realizado, falta],
+            labels=['Realizado', 'Falta'],
+            values=[soma_real, falta],
             hole=.7,
-            marker_colors=['#299947', '#f2f2f2'],
+            marker_colors=['#299947', '#004a87'], # Verde e Azul Fasiclin
             textinfo='none'
         )])
         fig_donut.update_layout(
-            title="Eficiência Total",
-            annotations=[dict(text=f'{percentual:.0f}%', x=0.5, y=0.5, font_size=40, showarrow=False, font_color="#004a87")],
-            showlegend=False, height=350
+            annotations=[dict(text=f'Eficiência Total<br><br><b>{perc_total:.0f}%</b>', x=0.5, y=0.5, font_size=20, showarrow=False)],
+            showlegend=False, height=400, margin=dict(t=0, b=0, l=0, r=0)
         )
         st.plotly_chart(fig_donut, use_container_width=True)
 
-    with c2:
-        # Agrupamento para o gráfico de barras
-        df_bar = df_filtered.groupby(COL_CLINICA).agg({COL_META: 'sum'}).reset_index()
-        df_bar['REALIZADO'] = df_filtered.groupby(COL_CLINICA)[MESES].sum().sum(axis=1).values
+    with col_bar:
+        # Agrupa por clínica para o gráfico de barras
+        resumo = df_filtrado.groupby(COL_CLINICA).agg({COL_META: 'sum'}).reset_index()
+        resumo['REALIZADO'] = df_filtrado.groupby(COL_CLINICA)[MESES].sum().sum(axis=1).values
         
         fig_bar = go.Figure()
-        fig_bar.add_trace(go.Bar(name='Realizado', x=df_bar[COL_CLINICA], y=df_bar['REALIZADO'], marker_color='#299947'))
+        fig_bar.add_trace(go.Bar(name='Realizado', x=resumo[COL_CLINICA], y=resumo['REALIZADO'], marker_color='#299947'))
+        fig_bar.add_trace(go.Bar(name='Meta', x=resumo[COL_CLINICA], y=resumo[COL_META], marker_color='#004a87'))
+        fig_bar.update_layout(barmode='group', height=400, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    # --- DETALHAMENTO POR CURSO (Igual à imagem) ---
+    st.markdown("### Detalhamento")
+    cols = st.columns(3)
+    for i, (_, row) in enumerate(resumo.iterrows()):
+        p_ind = (row['REALIZADO'] / row[COL_META] * 100) if row[COL_META] > 0 else 0
+        with cols[i % 3]:
+            st.write(f"**{row[COL_CLINICA]}**")
+            st.caption(f"Meta: {row[COL_META]:.0f} | Realizado: {row['REALIZADO']:.0f}")
+            st.progress(min(p_ind/100, 1.0))
+            st.write(f"**{p_ind:.0f}%**")
+            st.markdown("---")
+else:
+    st.error("Não foi possível carregar os dados. Verifique o compartilhamento da planilha.")
