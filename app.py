@@ -75,7 +75,7 @@ if not df_raw.empty:
     # Filtros
     col_u, col_c = st.columns(2)
     with col_u:
-        unidade_sel = st.selectbox("Unidade", ["TODAS"] + list(ABAS_CONFIG.keys()))
+        unidade_sel = st.selectbox("Unidade", list(ABAS_CONFIG.keys()))
     
     df_filtrado = df_raw.copy()
     if unidade_sel != "TODAS":
@@ -95,7 +95,7 @@ if not df_raw.empty:
     falta = max(0, total_meta - total_realizado)
 
     # Banner de Acompanhamento
-    st.info(f"**Acompanhamento de Metas:** Faltam **{falta:.0f}** procedimentos. Média necessária: **{int(falta/4) if falta > 0 else 0}/mês**.")
+    st.info(f"**Acompanhamento de Metas:** Faltam **{falta:.0f}** procedimentos. Média necessária: **{int(falta/2) if falta > 0 else 0}/mês**.")
 
     # Gráficos
     c_donut, c_bar = st.columns([1, 2])
