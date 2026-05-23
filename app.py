@@ -88,14 +88,33 @@ if not df_raw.empty:
     if clinica_sel != "TODAS":
         df_filtrado = df_filtrado[df_filtrado[COL_CLINICA] == clinica_sel]
 
-    # Cálculos
+    # --- LÓGICA ALTERADA: CÁLCULOS DINÂMICOS DE MESES ATIVOS ---
     total_meta = df_filtrado[COL_META].sum()
     total_realizado = df_filtrado[MESES].sum().sum()
-    perc_total = (total_realizado / total_meta * 100) if total_meta > 0 else 0
     falta = max(0, total_meta - total_realizado)
+    perc_total = (total_realizado / total_meta * 100) if total_meta > 0 else 0
 
-    # Banner de Acompanhamento
-    st.info(f"**Acompanhamento de Metas:** Faltam **{falta:.0f}** procedimentos. Média necessária: **{int(falta/2) if falta > 0 else 0}/mês**.")
+    # Descobrir quantos meses já têm dados inseridos (valores maiores que zero)
+    # Somamos os valores de cada mês no dataframe filtrado para ver quais estão ativos
+    soma_por_mes = df_filtrado[MESES].sum()
+    meses_com_dados = info_meses_ativos = sum(soma_por_mes > 0)
+    
+    # Total de meses planejados no sistema (neste caso, 3: Fev, Mar, Abr)
+    total_meses_periodo = len(MESES)
+    meses_restantes = max(1, total_meses_periodo - meses_com_dados)
+
+    # Se a meta já foi batida, os meses restantes não importam para o cálculo da média
+    if falta > 0:
+        media_necessaria_mes = int(falta / meses_restantes)
+    else:
+        media_necessaria_mes = 0
+
+    # Banner de Acompanhamento Ajustado Dinamicamente
+    if falta > 0:
+        st.info(f"**Acompanhamento de Metas:** Faltam **{falta:.0f}** procedimentos para atingir a meta total. "
+                f"Considerando os meses restantes ({meses_restantes}), a média necessária é de **{media_necessaria_mes}** procedimentos/mês.")
+    else:
+        st.success(f"🎉 **Parabéns!** A meta de {total_meta:.0f} atendimentos foi atingida ou superada! (Realizado: {total_realizado:.0f})")
 
     # Gráficos
     c_donut, c_bar = st.columns([1, 2])
@@ -121,7 +140,7 @@ if not df_raw.empty:
         fig_bar = go.Figure()
         fig_bar.add_trace(go.Bar(name='Realizado', x=resumo[COL_CLINICA], y=resumo['REALIZADO'], marker_color='#299947'))
         fig_bar.add_trace(go.Bar(name='Meta', x=resumo[COL_CLINICA], y=resumo[COL_META], marker_color='#004a87'))
-        fig_bar.update_layout(barmode='group', height=350, margin=dict(t=20, b=20), legend=dict(orientation="h", y=1.1))
+        fig_bar.update_layout(barmode='group', height=350, margin=dict(t=20, b=20), legend=dict(orientation="h", y=11))
         st.plotly_chart(fig_bar, use_container_width=True)
 
     # Detalhamento por Curso
