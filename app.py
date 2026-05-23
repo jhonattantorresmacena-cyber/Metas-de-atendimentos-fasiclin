@@ -62,7 +62,7 @@ if not df_raw.empty:
 
     COL_META = buscar_col(df_raw.columns, ["QUANTID", "SEMESTRE"])
     COL_CLINICA = "CLINICA"
-    MESES = ["FEVEREIRO", "MARÇO", "ABRIL"]
+    MESES = ["FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO"]
 
     # Garantir formato numérico
     for c in [COL_META] + MESES:
