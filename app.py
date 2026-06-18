@@ -28,16 +28,22 @@ ABAS_CONFIG = {
     "PRIMAVERA": "1535754805"
 }
 
-@st.cache_data(ttl=60)
+import time  # Certifique-se de importar o módulo time no topo do arquivo
+
+@st.cache_data(ttl=60)  # Mantém o cache por 1 minuto para não estourar o limite de requisições
 def load_all_data():
     lista_dfs = []
+    # Criamos um número que muda a cada minuto baseado no timestamp atual
+    # Isso engana o cache e força o download do dado novo
+    cache_buster = int(time.time() // 60) 
+    
     for nome_aba, gid in ABAS_CONFIG.items():
         try:
-            # Link de exportação CSV por GID específico
-            url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}"
+            # Adicionamos o &cb= no final da URL para quebrar o cache do Google
+            url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={gid}&cb={cache_buster}"
             df_temp = pd.read_csv(url)
             
-            # Limpeza de colunas (conforme lógica do seu HTML original)
+            # Limpeza de colunas
             df_temp.columns = [
                 str(c).replace('\n', ' ').replace('\r', ' ').strip().upper() 
                 for c in df_temp.columns
