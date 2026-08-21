@@ -161,5 +161,26 @@ if not df_raw.empty:
                 st.progress(min(p_ind/100, 1.0))
                 st.caption(f"Meta: {int(row[COL_META])}")
                 st.markdown("---")
+                
+                 # --- TABELA DE DADOS & DOWNLOAD SEM ERRO DE PACOTES ---
+    with aba_dados:
+        st.subheader("💾 Dados Consolidados")
+        
+        colunas_exibir = [COL_CLINICA, COL_QUANT.PROCEDIMENTOPORALUNO, COL_ALUNOS, COL_META, 'TOTAL_REALIZADO_LINHA'] + meses_existentes
+        cols_presentes = [c for c in colunas_exibir if c in df_kpi_atual.columns]
+        
+        df_exibicao = df_kpi_atual[cols_presentes].copy()
+        st.dataframe(df_exibicao, use_container_width=True)
+        
+        csv_excel = df_exibicao.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
+
+        st.download_button(
+            label="📊 Baixar Tabela para Excel (.csv/excel)",
+            data=csv_excel,
+            file_name=f"FASICLIN_{unidade_sel}_{ano_sel}.csv",
+            mime="text/csv"
+        )
+else:
+    st.warning("Nenhum dado pôde ser carregado. Verifique o compartilhamento da planilha no Google Sheets.")
 else:
     st.warning("Nenhum dado encontrado. Verifique se a planilha está compartilhada corretamente.")
