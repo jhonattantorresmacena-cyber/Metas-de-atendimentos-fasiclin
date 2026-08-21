@@ -229,19 +229,22 @@ if not df_raw.empty:
                 st.caption(f"Meta: {int(row[COL_META])}")
                 st.markdown("---")
 
-    # Tabela de Dados Consolidados
+   # Tabela de Dados Consolidados
     st.subheader("💾 Dados Consolidados")
     df_filtrado["TOTAL_REALIZADO_LINHA"] = df_filtrado[meses_existentes].sum(
         axis=1
     )
 
-    colunas_exibir = (
+    # Definição na ordem solicitada: Unidade, Clínica, Meses, Total Realizado e Meta Por Semestre
+    colunas_desejadas = (
         ["UNIDADE_NOME", COL_CLINICA]
-        + ([COL_META] if COL_META else [])
-        + ["TOTAL_REALIZADO_LINHA"]
         + meses_existentes
+        + ["TOTAL_REALIZADO_LINHA"]
+        + ([COL_META] if COL_META else [])
     )
-    cols_presentes = [c for c in colunas_exibir if c in df_filtrado.columns]
+
+    # Mantém apenas as colunas que realmente existem no DataFrame
+    cols_presentes = [c for c in colunas_desejadas if c in df_filtrado.columns]
 
     df_exibicao = df_filtrado[cols_presentes].copy()
     st.dataframe(df_exibicao, use_container_width=True)
@@ -254,8 +257,4 @@ if not df_raw.empty:
         data=csv_excel,
         file_name=f"FASICLIN_{unidade_sel}.csv",
         mime="text/csv",
-    )
-else:
-    st.warning(
-        "Nenhum dado pôde ser carregado. Verifique a conexão e o compartilhamento público da planilha."
     )
